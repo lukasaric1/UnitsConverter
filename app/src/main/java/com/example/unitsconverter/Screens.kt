@@ -1,5 +1,6 @@
 package com.example.unitsconverter
 
+import android.accounts.NetworkErrorException
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,25 +14,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,15 +36,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+
 
 
 object Screens {
@@ -1477,40 +1470,35 @@ object Screens {
             onBackClick = { navController.popBackStack() }
         )
 
-        val conversionRates = mapOf(
-            "USD" to 1.0,
-            "EUR" to 0.91,
-            "GBP" to 0.78,
-            "JPY" to 155.25,
-            "CAD" to 1.35,
-            "AUD" to 1.55,
-            "CHF" to 0.87,
-            "CNY" to 7.29,
-            "INR" to 84.37,
-            "MXN" to 17.26,
-            "ZAR" to 18.12,
-            "BRL" to 5.01,
-            "HKD" to 7.78,
-            "RUB" to 95.01,
-            "SAR" to 3.75,
-            "KRW" to 1398.57,
-            "TRY" to 30.14,
-            "SGD" to 1.38,
-            "IDR" to 15938.0,
-            "NZD" to 1.69
-        )
+        val apiKey = BuildConfig.API_KEY // Access API key from BuildConfig
+        val apiService = CurrencyApiService.create()
+        val repository = remember { CurrencyRepository(apiService) }
+        var exchangeRates by remember { mutableStateOf<Map<String, Double>?>(null) }
+
+
+        LaunchedEffect(Unit) {
+            try {
+                val response = repository.getLatestRates(apiKey)
+                if (response.success) {
+                    exchangeRates = response.rates
+                } else {
+                    // Handle API error (e.g., display an error message)
+                }
+            } catch (e: NetworkErrorException) {
+                // Handle network error (e.g., display an error message)
+            }
+        }
 
         var fromCurrency by remember { mutableStateOf("USD") }
         var toCurrency by remember { mutableStateOf("USD") }
         var fromAmount by remember { mutableStateOf("") }
         var toAmount by remember { mutableStateOf("") }
-
         var isEditingFromField by remember { mutableStateOf(true) }
 
         fun convertCurrency(amount: String, from: String, to: String): String {
             val input = amount.toDoubleOrNull() ?: return ""
-            val fromRate = conversionRates[from] ?: 1.0
-            val toRate = conversionRates[to] ?: 1.0
+            val fromRate = exchangeRates?.get(from) ?: 1.0
+            val toRate = exchangeRates?.get(to) ?: 1.0
             return ((input / fromRate) * toRate).toString()
         }
 
@@ -1546,7 +1534,7 @@ object Screens {
                 horizontalArrangement = Arrangement.spacedBy(15.dp)
             ) {
                 DropdownOutlinedTextField(
-                    options = conversionRates.keys.toList(),
+                    options = exchangeRates?.keys?.toList() ?: emptyList(),
                     label = "Select Currency",
                     selectedOption = fromCurrency,
                     onOptionSelected = { fromCurrency = it }
@@ -1581,7 +1569,7 @@ object Screens {
                 horizontalArrangement = Arrangement.spacedBy(15.dp)
             ) {
                 DropdownOutlinedTextField(
-                    options = conversionRates.keys.toList(),
+                    options = exchangeRates?.keys?.toList() ?: emptyList(),
                     label = "Select Currency",
                     selectedOption = toCurrency,
                     onOptionSelected = { toCurrency = it }
@@ -1605,93 +1593,7 @@ object Screens {
 
 }
 
-@Composable
-fun CardWithInputField() {
-    // Reference to control the keyboard
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
 
-    // States for input and dropdown
-    var unitValue by remember { mutableStateOf("") }
-    var selectedOption by remember { mutableStateOf("Meter") } // Initial selection
-    val options = listOf("Meter", "Centimeter", "Kilometer", "Mile", "Yard", "Inch")
-
-    // Automatically show keyboard when this composable is first composed
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus() // Request focus on the TextField
-        keyboardController?.show() // Show the keyboard
-    }
-
-    Card(
-        modifier = Modifier
-            .padding(top = 0.dp, end = 90.dp)
-            .width(400.dp)
-            .height(300.dp),
-        shape = RoundedCornerShape(1.dp),
-        colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.gray)),
-    ) {
-        Column(
-            modifier = Modifier
-                .width(400.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            CustomDropdownMenu(
-                options = options,
-                selectedOption = selectedOption,
-                onOptionSelected = { selectedOption = it }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // TextField for numeric input
-            TextField(
-                value = unitValue,
-                onValueChange = { newValue ->
-                    unitValue = newValue.filter { it.isDigit() || it == '.' }
-                },
-                modifier = Modifier
-                    .width(200.dp)
-                    .height(100.dp)
-                    .focusRequester(focusRequester), // Attach the focusRequester to the TextField
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus() // Dismiss the keyboard when done
-                    }
-                )
-            )
-        }
-        Divider(
-            modifier = Modifier
-                .width(400.dp)
-                .padding(top = 50.dp)
-        )
-
-        CustomDropdownMenu(
-            options = options,
-            selectedOption = selectedOption,
-            onOptionSelected = { selectedOption = it }
-        )
-
-        TextField(
-            value = unitValue,
-            onValueChange = { newValue ->
-                unitValue = newValue.filter { it.isDigit() || it == '.' }
-            },
-            modifier = Modifier
-                .width(200.dp)
-                .height(100.dp)
-                .focusRequester(focusRequester), // Attach the focusRequester to the TextField
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    focusManager.clearFocus() // Dismiss the keyboard when done
-                }
-            )
-        )
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1704,13 +1606,13 @@ fun TopAppBar(title: String, onBackClick: () -> Unit) {
                     navigationIcon = {
                         IconButton(onClick = onBackClick) {
                             Icon(
-                                imageVector = Icons.Default.ArrowBack,
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back"
                             )
                         }
                     }
                 )
-                Divider()
+                HorizontalDivider()
             }
         }
     ) { innerPadding ->
